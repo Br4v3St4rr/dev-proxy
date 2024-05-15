@@ -26,6 +26,7 @@ public class ProxyEngine
     private readonly PluginEvents _pluginEvents;
     private readonly IProxyLogger _logger;
     private readonly ProxyConfiguration _config;
+    private KillSwitch? _killSwitch;
     private static ProxyServer? _proxyServer;
     private ExplicitProxyEndPoint? _explicitEndPoint;
     // lists of URLs to watch, used for intercepting requests
@@ -90,6 +91,10 @@ public class ProxyEngine
 
     public async Task Run(CancellationToken? cancellationToken)
     {
+        _killSwitch = new KillSwitch($"{AppContext.BaseDirectory}\\kill.dead",
+            cancellationToken);
+        _killSwitch.Check();
+        
         Debug.Assert(_proxyServer is not null, "Proxy server is not initialized");
 
         if (!_urlsToWatch.Any())
@@ -106,7 +111,7 @@ public class ProxyEngine
         _proxyServer.ServerCertificateValidationCallback += OnCertificateValidation;
         _proxyServer.ClientCertificateSelectionCallback += OnCertificateSelection;
         cancellationToken?.Register(OnCancellation);
-
+        _killSwitch.KillSwitchEngaged += Console_CancelKillSwitch;
         var ipAddress = string.IsNullOrEmpty(_config.IPAddress) ? IPAddress.Any : IPAddress.Parse(_config.IPAddress);
         _explicitEndPoint = new ExplicitProxyEndPoint(ipAddress, _config.Port, true);
         // Fired when a CONNECT request is received
@@ -355,6 +360,16 @@ public class ProxyEngine
         await StopRecording();
         StopProxy();
 
+        // Close the process
+        Environment.Exit(0);
+    }
+    
+    private async void Console_CancelKillSwitch(object? sender, EventArgs e)
+    {
+        Console.WriteLine("KillSwitch Engaged!");
+        await StopRecording();
+        StopProxy();
+        Console.WriteLine("Proxy Stopped, quiting");
         // Close the process
         Environment.Exit(0);
     }
